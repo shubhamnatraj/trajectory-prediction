@@ -48,7 +48,8 @@ class DataHandler():
             "query_input_type": args.query_input_type.lower(),
             "others_input_type": args.others_input_type.lower(),
             "obstacles_input_type": args.obstacles_input_type.lower(),
-            "target_type": args.target_type.lower()
+            "target_type": args.target_type.lower(),
+            "beta_type" : "binary"
         }
         self.common_params = {
             "past_horizon": self.past_horizon,
@@ -58,6 +59,7 @@ class DataHandler():
             "data_types": self.data_types
         }
         self.data_key_list = self.getKeyList()
+        #TODO: print these keys to see what they are
         
         # Data directories
         self.raw_data_dir = args.raw_data_dir
@@ -142,130 +144,6 @@ class DataHandler():
 
         return sample_batch
         
-    def getPlottingData(self, trained_model, test_dataset_idx = 0, quads_to_plot = -1, params = None):
-        """
-        Converts data from the test set into data ready for plotting
-        """
-        
-        if params == None:
-            params = copy.deepcopy(self.common_params)
-            params["separate_goals"] = False
-            params["separate_obstacles"] = False
-            
-        prediction_horizon = params["prediction_horizon"]
-        
-        raw_dataset_path = os.path.join(self.raw_data_dir, self.datasets_testing[test_dataset_idx] + '.mat')
-        data = loadmat(raw_dataset_path)
-        
-        goal_array = data['log_quad_goal'] # [goal pose (4), timesteps, quadrotors] 
-        state_array = data['log_quad_state_real'] # [states (9), timesteps, quadrotors] 
-        logsize = int(data['logsize'])
-        
-        if len(goal_array.shape) == 3:
-            n_quadrotors = goal_array.shape[2]
-        else:
-            n_quadrotors = 1
-            goal_array = goal_array[:, :, np.newaxis]
-            state_array = state_array[:, :, np.newaxis]
-
-        # Find last time step which can be used for training
-        final_timestep = find_last_usable_step(goal_array, logsize)
-
-        trajs = np.swapaxes(state_array[0:3, 0:final_timestep, :], 0, 1)
-        vels = np.swapaxes(state_array[3:6, 0:final_timestep, :], 0, 1)
-        goals = np.swapaxes(goal_array[0:3, 0:final_timestep, :], 0, 1)
-
-        if 'log_obs_state_est' in data.keys():
-            obstacle_array = data['log_obs_state_est'] # [states (6), timesteps, obstacles] 
-            n_obstacles = obstacle_array.shape[2]
-            obs_trajs = np.swapaxes(obstacle_array[0:3, 0:final_timestep, :], 0, 1)
-        else:
-            n_obstacles = 0
-            obs_trajs = None
-
-        position_predictions = np.zeros((trajs.shape[0]-prediction_horizon-self.past_horizon+1,\
-                                        prediction_horizon+1,\
-                                        3,\
-                                        n_quadrotors))
-
-        if self.export_plotting_data and "log_quad_path" in data:
-            mpc_trajectory = np.zeros((trajs.shape[0]-prediction_horizon-self.past_horizon+1,\
-                        prediction_horizon+1,\
-                        3,\
-                        n_quadrotors))
-            mpc_trajectory[:, 1:] = np.swapaxes(data["log_quad_path"][0:3, :, self.past_horizon:final_timestep, :], 0, 2) # 2:final_timestep+2
-            
-            cvm_trajectory = np.zeros((trajs.shape[0]-prediction_horizon-self.past_horizon+1,\
-                        prediction_horizon+1,\
-                        3,\
-                        n_quadrotors))
-        else:
-            mpc_trajectory = None
-            cvm_trajectory = None
-
-        if quads_to_plot == -1: # Plot all quads
-            quads_to_plot = [idx for idx in range(n_quadrotors)]
-        elif type(quads_to_plot) == int:
-            quads_to_plot = [quads_to_plot]
-
-        for quad_idx in quads_to_plot:
-            data_dict = self.preprocess_data(data, quad_idx, params=params, relative=True, remove_stuck_quadrotors = False)
-            scaled_data_dict = self.scaler.transform(data_dict)
-            scaled_velocity_predictions = trained_model.predict(scaled_data_dict)
-            scaled_data_dict["target"] = scaled_velocity_predictions
-            unscaled_data = self.scaler.inverse_transform(scaled_data_dict)
-            unscaled_velocity_predictions = unscaled_data["target"]
-            
-            position_predictions[:, 0, :, quad_idx] = trajs[self.past_horizon:-prediction_horizon+1, :, quad_idx]
-            for timestep in range(1, prediction_horizon+1):
-                position_predictions[:, timestep, :, quad_idx] = position_predictions[:, timestep-1, :, quad_idx] \
-                                                                + unscaled_velocity_predictions[:, timestep-1, :] * self.dt
-                                                                
-                                                                
-                if cvm_trajectory is not None:                                                
-                    cvm_trajectory[:, timestep, :, quad_idx] = cvm_trajectory[:, timestep-1, :, quad_idx] \
-                                                                + vels[self.past_horizon:-prediction_horizon+1,:,:] * self.dt
-        
-        return {
-            'trajectories': trajs,
-            'obstacle_trajectories': obs_trajs,
-            'predictions': position_predictions,
-            'mpc_trajectory': mpc_trajectory,
-            'cvm_trajectory': cvm_trajectory,
-            'goals': goals
-        }
-        
-    def savePlottingData(self, filename, data, max_samples = None):
-        if max_samples == None:
-            n_samples = data['predictions'].shape[0]
-        else:
-            n_samples = min(data['predictions'].shape[0], max_samples)
-        n_quadrotors = data['trajectories'].shape[-1]
-        n_obstacles = data['obstacle_trajectories'].shape[-1]
-        prediction_horizon = data['predictions'].shape[1] - 1
-        past_horizon = data['trajectories'].shape[0] - n_samples - prediction_horizon + 1
-        
-        data_to_save = {
-            "quadrotor_positions": data['trajectories'][past_horizon-1:past_horizon-1+n_samples, :, :],
-            "obstacle_positions": data['obstacle_trajectories'][past_horizon-1:past_horizon-1+n_samples, :, :],
-            "quadrotor_past_trajectories": np.zeros((n_samples, past_horizon, 3, n_quadrotors)),
-            "quadrotor_future_trajectories": np.zeros((n_samples, prediction_horizon + 1, 3, n_quadrotors)),
-            "quadrotor_predicted_trajectories": data['predictions'],
-            "quadrotor_mpc_trajectories": data['mpc_trajectory'],
-            "quadrotor_cvm_trajectories": data['cvm_trajectory'],
-            "goals": data['goals'][past_horizon-1:past_horizon-1+n_samples, :, :],
-            "quadrotor_sizes": self.quadrotor_sizes,
-            "obstacle_sizes": self.obstacle_sizes
-        }
-        
-        for iteration in range(n_samples):
-            current_idx = iteration + past_horizon
-            
-            future_idx = current_idx + prediction_horizon
-            data_to_save["quadrotor_past_trajectories"][iteration] = data['trajectories'][iteration:current_idx, :, :]
-            data_to_save["quadrotor_future_trajectories"][iteration] = data['trajectories'][current_idx-1:future_idx, :, :]
-            
-        savemat(filename, data_to_save)
     
     def preprocess_data(self, data_, query_quad_idx, relative = True, params=None, remove_stuck_quadrotors=None):
         if params is None:
@@ -317,13 +195,14 @@ class DataHandler():
         past_timesteps_idxs = [idx for idx in range(0, final_timestep - prediction_horizon)]
         future_timesteps_idxs = [idx for idx in range(past_horizon, final_timestep)]
         
-        # Add first element of the list of inputs, which corresponds to the query agent's data
+        # Add first element of the list of inputs, which corresponds to the query agent's data [ONLY VELOCITY]
+        # CHANGE_MADE 
         query_input_data = state_array[3:6,\
                                     past_timesteps_idxs,\
                                     query_quad_idx]
         processed_data_dict["query_input"] = expand_sequence(query_input_data, past_horizon)
         
-        # Add second element to the list of inputs, which is the list of other agent's data
+        # Add second element to the list of inputs, which is the list of other agent's data [POSITION AND VELOCITY]
         others_input_data = state_array[0:6,\
                                         past_timesteps_idxs,\
                                         :]
@@ -337,7 +216,9 @@ class DataHandler():
 
         if "relvel" in self.data_types['others_input_type']: # Relative velocity for other agents
             others_input_data[3:6, :, :] = others_input_data[3:6, :, :] - query_agent_curr_vel # Relative positions to the query agent
-            
+        
+        """
+        # OBSTACLES     
         if n_obstacles > 0:
             if self.data_types['obstacles_input_type'] == "static": # Static obstacles
                 # Only positions
@@ -401,7 +282,8 @@ class DataHandler():
                     else:
                         raise Exception(f"{bcolors.FAIL}Invalid obstacles input type{bcolors.ENDC}")
                         
-
+        """ 
+        
         if self.data_types["others_input_type"] != "none":
             others_input_list = []
             other_quad_idxs = [idx for idx in range(n_quadrotors) if idx != query_quad_idx]
@@ -410,7 +292,7 @@ class DataHandler():
                 others_input_list.append(other_quad_sequence)
                 
             processed_data_dict["others_input"] = np.stack(others_input_list, axis=-1) # Stack along last dimension
-
+        """
         if n_obstacles > 0:            
             if "stack" in  self.data_types["obstacles_input_type"]:
                 processed_data_dict["obstacles_input"] = np.zeros((obstacles_input_data.shape[1]-past_horizon+1,\
@@ -437,14 +319,18 @@ class DataHandler():
                 
                 # processed_data_dict["obstacles_input"] = obstacles_input
                 processed_data_dict["obstacles_input"] = processed_data_dict["obstacles_input"][:, -1, :, :] # Only use position at current step
-
+        """ 
+        
         # Slice state_array to build target_data
         target_data = state_array[3:6,\
                                 future_timesteps_idxs,\
                                 query_quad_idx:query_quad_idx + 1]
+        
+        beta_data = state_array[2:3, future_timesteps_idxs, query_quad_idx:query_quad_idx + 1]
 
         # Expand target feature sequences
         processed_data_dict["target"] = expand_sequence(target_data, prediction_horizon)
+        processed_data_dict["beta"] = expand_sequence(beta_data, prediction_horizon)
         
         keep_idxs = [True] * processed_data_dict["target"].shape[0]
         final_timestep - (past_horizon + prediction_horizon) + 1
@@ -480,12 +366,13 @@ class DataHandler():
         
         data = loadmat(raw_dataset_path)
         if len(data['log_quad_state_real'].shape) == 2:
-            data['log_quad_state_real'] = data['log_quad_state_real'][:,:,np.newaxis]
+            data['log_quad_state_real'] = data['log_quad_state_real'][:,:,np.newaxis] # Reshaping a 3D array into a 4D array
             data['log_quad_goal'] = data['log_quad_goal'][:,:,np.newaxis]
         
         n_quadrotors = data['log_quad_state_real'].shape[2]
         
-        for quad_idx in range(n_quadrotors):
+        # for quad_idx in range(n_quadrotors):
+        for quad_idx in range(1): # TEMP: Change to only process human data
             print(f"Preprocessing data for quad %d out of %d" % (quad_idx+1, n_quadrotors))
             
             # data_dict = self.preprocess_data(data, quad_idx, separate_goals=params["separate_goals"], separate_obstacles=params["separate_obstacles"])
@@ -499,6 +386,7 @@ class DataHandler():
             for sample in range(n_samples):
                 feature = {}
                 for key in self.data_key_list:
+                    # print(key)
                     feature[key] = tf.train.Feature(float_list=tf.train.FloatList(value=data_dict[key][sample].flatten()))
                 example = tf.train.Example(features=tf.train.Features(feature=feature))
                 serialized = example.SerializeToString()
@@ -581,7 +469,8 @@ class DataHandler():
         new_scaler.fit(data_dict)
         
         return new_scaler
-                
+    
+    """           #CHANGE
     def scaleData(self, data):
         data_scaled = data
         for key in self.data_key_list:
@@ -607,6 +496,7 @@ class DataHandler():
                         data[key][:, timestep, :, quad_idx] = scaler[key].inverse_transform( data_scaled[key][:, timestep, :, quad_idx] )
 
         return data
+    """
     
     def _parse_function(self, example_proto, params):
         keys_to_features = {}
@@ -617,6 +507,8 @@ class DataHandler():
                 shape = (params["past_horizon"], 3)
             elif key == "others_input":
                 shape = (params["past_horizon"], 6, self.n_quadrotors-1)
+            elif key == "beta":
+                shape = (params["past_horizon"], 1)
             elif key == "obstacles_input":
                 # shape = (self.past_horizon, 6, self.n_obstacles)
                 if self.data_types['obstacles_input_type'] == "static":
@@ -644,7 +536,7 @@ class DataHandler():
         dataset_out = dataset_in.map(lambda x: self._parse_function(x, params=params))
         if shuffle:
             dataset_out = dataset_out.shuffle(buffer_size = int(1e6))
-        dataset_out = dataset_out.map(self.scaler.transform)
+        # dataset_out = dataset_out.map(self.scaler.transform) CHANGE: Temp
         dataset_out = dataset_out.batch(self.batch_size, drop_remainder=True) # Drop remainder so that all batches have the same size
         return dataset_out
 
@@ -699,7 +591,9 @@ class scaler():
     def fit(self, data):
         self.mins = {}
         self.maxs = {}
-        for key in data.keys():    
+        for key in data.keys(): 
+            print(key)
+            print(data[key].shape)   
             if key == "target" or key == "query_input":
                 self.mins[key] = data[key].min(axis=0).min(axis=0)
                 self.maxs[key] = data[key].max(axis=0).max(axis=0)
@@ -709,10 +603,13 @@ class scaler():
             elif key == "others_input":
                 self.mins[key] = data[key].min(axis=3).min(axis=0).min(axis=0)
                 self.maxs[key] = data[key].max(axis=3).max(axis=0).max(axis=0)
+            elif key == "beta":
+                self.mins[key] = data[key].min(axis=0).min(axis=0)
+                self.maxs[key] = data[key].max(axis=0).max(axis=0)
             else:
                 raise Exception(f"{bcolors.FAIL}Data does not have the expected dimensions{bcolors.ENDC}")
             
-            
+    """        # CHANGE
     def transform(self, data):
         scaled_data = {}
         for key in data.keys():
@@ -726,6 +623,8 @@ class scaler():
                 elif key == "others_input":
                     X_std = (data[key] - self.mins[key][np.newaxis, :, np.newaxis])/(self.maxs[key][np.newaxis, :, np.newaxis] - self.mins[key][np.newaxis, :, np.newaxis])
                     scaled_data[key] = X_std * (self.feature_range[1]-self.feature_range[0]) + self.feature_range[0]
+                elif key == "beta":
+                    pass
                 else:
                     raise Exception(f"{bcolors.FAIL}Data does not have the expected dimensions{bcolors.ENDC}")
                 
@@ -739,6 +638,8 @@ class scaler():
                 elif key == "others_input":
                     X_std = (data[key] - self.mins[key][np.newaxis, np.newaxis, :, np.newaxis])/(self.maxs[key][np.newaxis, np.newaxis, :, np.newaxis] - self.mins[key][np.newaxis, np.newaxis, :, np.newaxis])
                     scaled_data[key] = X_std * (self.feature_range[1]-self.feature_range[0]) + self.feature_range[0]
+                elif key == "beta":
+                    pass
                 else:
                     raise Exception(f"{bcolors.FAIL}Data does not have the expected dimensions{bcolors.ENDC}")
 
@@ -756,68 +657,13 @@ class scaler():
             elif key == "others_input":
                 X_std = (data[key] - self.feature_range[0])/(self.feature_range[1] - self.feature_range[0])
                 unscaled_data[key] = X_std * (self.maxs[key][np.newaxis, np.newaxis, :, np.newaxis] - self.mins[key][np.newaxis, np.newaxis, :, np.newaxis]) + self.mins[key][np.newaxis, np.newaxis, :, np.newaxis]
+            elif key == "beta":
+                pass
             else:
                 raise Exception(f"{bcolors.FAIL}Data does not have the expected dimensions{bcolors.ENDC}")
             
         return unscaled_data
-    
-    
-    """def fit(self, data):
-    self.mins = {}
-    self.maxs = {}
-    for key in data.keys():    
-        if len(data[key].shape) == 3:
-            self.mins[key] = data[key].min(axis=0).min(axis=0)
-            self.maxs[key] = data[key].max(axis=0).max(axis=0)
-        elif len(data[key].shape) == 4:
-            self.mins[key] = data[key].min(axis=3).min(axis=0).min(axis=0)
-            self.maxs[key] = data[key].max(axis=3).max(axis=0).max(axis=0)
-        else:
-            raise Exception(f"{bcolors.FAIL}Data does not have the expected dimensions{bcolors.ENDC}")
-    
-    def transform(self, data):
-        scaled_data = {}
-        for key in data.keys():
-            # X_std = (data[key] - self.mins[key])/(self.maxs[key] - self.mins[key])
-            # scaled_data[key] = X_std * (self.feature_range[1]-self.feature_range[0]) + self.feature_range[0]
-            
-            if tf.is_tensor(data[key]):
-                if len(data[key].shape) == 2:
-                    X_std = (data[key] - self.mins[key][np.newaxis,:])/(self.maxs[key][np.newaxis,:] - self.mins[key][np.newaxis,:])
-                    scaled_data[key] = X_std * (self.feature_range[1]-self.feature_range[0]) + self.feature_range[0]
-                elif len(data[key].shape) == 3:
-                    # actual_range = self.maxs[key] - self.mins[key]
-                    X_std = (data[key] - self.mins[key][np.newaxis, :, np.newaxis])/(self.maxs[key][np.newaxis, :, np.newaxis] - self.mins[key][np.newaxis, :, np.newaxis])
-                    scaled_data[key] = X_std * (self.feature_range[1]-self.feature_range[0]) + self.feature_range[0]
-                else:
-                    raise Exception(f"{bcolors.FAIL}Data does not have the expected dimensions{bcolors.ENDC}")
-                
-            else:
-                # unscaled_data = data[key]
-                if len(data[key].shape) == 3:
-                    X_std = (data[key] - self.mins[key][np.newaxis, np.newaxis, :])/(self.maxs[key][np.newaxis, np.newaxis, :] - self.mins[key][np.newaxis, np.newaxis, :])
-                    scaled_data[key] = X_std * (self.feature_range[1]-self.feature_range[0]) + self.feature_range[0]
-                elif len(data[key].shape) == 4:
-                    # actual_range = self.maxs[key] - self.mins[key]
-                    X_std = (data[key] - self.mins[key][np.newaxis, np.newaxis, :, np.newaxis])/(self.maxs[key][np.newaxis, np.newaxis, :, np.newaxis] - self.mins[key][np.newaxis, np.newaxis, :, np.newaxis])
-                    scaled_data[key] = X_std * (self.feature_range[1]-self.feature_range[0]) + self.feature_range[0]
-                else:
-                    raise Exception(f"{bcolors.FAIL}Data does not have the expected dimensions{bcolors.ENDC}")
-                
-        return scaled_data
-    
-    def inverse_transform(self, data):
-        unscaled_data = {}
-        for key in data.keys():
-            if len(data[key].shape) == 3:
-                X_std = (data[key] - self.feature_range[0])/(self.feature_range[1] - self.feature_range[0])
-                unscaled_data[key] = X_std * (self.maxs[key][np.newaxis, np.newaxis, :] - self.mins[key][np.newaxis, np.newaxis, :]) + self.mins[key][np.newaxis, np.newaxis, :]
-            elif len(data[key].shape) == 4:
-                X_std = (data[key] - self.feature_range[0])/(self.feature_range[1] - self.feature_range[0])
-                unscaled_data[key] = X_std * (self.maxs[key][np.newaxis, np.newaxis, :, np.newaxis] - self.mins[key][np.newaxis, np.newaxis, :, np.newaxis]) + self.mins[key][np.newaxis, np.newaxis, :, np.newaxis]
-                
-        return unscaled_data"""
-        
+    """ 
 
 def obstacles_data_to_input(obstacles_input_data, past_horizon):
     obstacles_input_list = []

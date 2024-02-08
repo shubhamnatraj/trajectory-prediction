@@ -75,7 +75,7 @@ SUMMARY = True # To include a summary of the results of the model in a csv file
 # To display and/or record an animation of the test dataset with the trajcetory predictions from the model
 DISPLAY = False
 RECORD = False
-EXPORT_PLOTTING_DATA = False
+EXPORT_PLOTTING_DATA = True
 N_FRAMES = 2000 # Number of frames to display/record
 DT = 0.05 # Used to compute the FPS of the video
 PLOT_GOALS = True # To plot the goals of the quadrotors
@@ -125,8 +125,12 @@ PLOT_ELLIPSOIDS = False
 # datasets_validation = "sameRadDynObs6quad6_2"
 # datasets_testing = datasets_validation
 
-datasets_training = "sameRadDynObs10quad10_v2_1 sameRadStatObs10quad10_1"
-datasets_validation = "sameRadDynObs10quad10_v2_2 sameRadStatObs10quad10_2"
+# datasets_training = "sameRadDynObs10quad10_v2_1 sameRadStatObs10quad10_1"
+# datasets_validation = "sameRadDynObs10quad10_v2_2 sameRadStatObs10quad10_2"
+# datasets_testing = datasets_validation
+
+datasets_training = "hr_train_3000_mixed"
+datasets_validation = "hr_val_500_mixed"
 datasets_testing = datasets_validation
 
 # datasets_training = "goalSequence1"
@@ -146,7 +150,7 @@ regularization_factor = 0.01
 # Recommended: vel, relpos_relvel, dynamic_relvel
 query_input_type = "vel" # {vel}
 others_input_type = "relpos_relvel" # {none, relpos_vel, relpos_relvel}
-obstacles_input_type = "dynamic_relvel" # {none, static, dynamic, dynamic_radii, dynamic_points6concat, dynamic_points6stack} (dynamic options can also use _relvel)
+obstacles_input_type = "none" # {none, static, dynamic, dynamic_radii, dynamic_points6concat, dynamic_points6stack} (dynamic options can also use _relvel)
 target_type = "vel" # {vel}
 
 past_horizon = 10
@@ -305,6 +309,7 @@ if args.train:
         
         # Training epoch
         for batch in data.tfdataset_training:
+            print(batch.keys())
             model.train_step(batch)
             step += 1
             if step > args.max_steps:
@@ -360,10 +365,17 @@ if args.train:
 
 # Retrieve best model
 model = model_selector(args)
+print(type(model))
 if 'sample_input_batch' not in locals():
     sample_input_batch = data.getSampleInputBatch()
 model.call(sample_input_batch)
-model.load_weights(checkpoint_path)
+model.built= True
+model.load_weights(checkpoint_path) # TODO: Fix Error on this line
+
+"""
+Error Message:
+ValueError: Unable to load weights saved in HDF5 format into a subclassed Model which has not created its variables yet. Call the Model first, then load the weights.
+"""
 
 # Set model back to stateless for prediction
 if model.stateful:
@@ -399,6 +411,7 @@ if args.summary:
             trained_model = model_selector(test_args)
             sample_test_input_batch = data.getSampleInputBatch(dataset_type="test")
             trained_model.call(sample_test_input_batch)
+            trained_model.built= True
             trained_model.load_weights(checkpoint_path)
 
             for batch in data.tfdataset_fde_testing:

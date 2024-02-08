@@ -30,8 +30,9 @@ class StateEncoder(tfkl.Layer):
         self.lstm_quad = tfkl.LSTM(self.rnn_state_size, activation = args.lstm_activation, name = 'lstm_state', return_sequences = False,\
             kernel_regularizer = tfkr.l2(self.regularization_factor), recurrent_regularizer = tfkr.l2(self.regularization_factor), bias_regularizer = tfkr.l2(self.regularization_factor), activity_regularizer = tfkr.l2(self.regularization_factor))
         
-    def call(self, x):
-        out = self.lstm_quad(x)
+    def call(self, x, beta):
+        concatenated_input = tf.concat([x, beta], axis=2)
+        out = self.lstm_quad(concatenated_input)
         return out
 
 class CommonEncoder(tfkl.Layer):
@@ -134,11 +135,29 @@ class FullModel(tfk.Model):
         self.decoder = Decoder(args)
                 
     def call(self, x):
-        x1 = self.state_encoder(x["query_input"])
+        # print("keys")
+        # print(x.keys())
+        # print("query_input")
+        # print(x["query_input"].shape)
+        # print("others_input")
+        # print(x["others_input"].shape)
+        # print("beta")
+        # print(x["beta"].shape)
+        x1 = self.state_encoder(x["query_input"], x["beta"])
+        # print("x1")
+        # print(x1.shape)
         x2 = self.common_encoder( x )
+        # print("x2")
+        # print(x2.shape)
         concat = self.concat([x1, x2])
+        # print("concat")
+        # print(concat.shape)
         repeated = self.repeat(concat)
+        # print("repeated")
+        # print(repeated.shape)
         out = self.decoder(repeated)
+        # print("out")
+        # print(out.shape)
         return out
     
     @tf.function 

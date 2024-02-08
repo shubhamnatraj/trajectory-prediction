@@ -3,9 +3,14 @@ import pickle as pkl
 import numpy as np
 # from utils.data_handler_v3_tfrecord import expand_sequence
 from utils.model_utils import model_selector
+from scipy.io import loadmat, savemat
+
+import matplotlib.pyplot as plt
+import datetime
+
 
 model_name = "dynamicEllipsoidObstaclesRNN_commonInputMaxPooling_alt"
-model_number = 508
+model_number = 511
 
 class trajectory_predictor():
     def __init__(self, n_robots, n_obstacles, past_horizon=10, prediction_horizon=20, dt=0.05, model_name = model_name, model_number = model_number):
@@ -28,9 +33,12 @@ class trajectory_predictor():
         self.scaler = args.scaler
         
         self.input_data = {}
+        # self.input_data["beta"] = np.zeros((1, self.past_horizon, 1))
+        self.input_data["beta"] = np.ones((self.n_robots, self.past_horizon, 1))
+        # self.input_data["query_input"] = np.zeros((1, self.past_horizon, 3))
         self.input_data["query_input"] = np.zeros((self.n_robots, self.past_horizon, 3))
         if self.n_robots > 1:
-            self.input_data["others_input"] = np.zeros((self.n_robots, self.past_horizon, 6, self.n_robots-1))
+            self.input_data["others_input"] = np.zeros((n_robots, self.past_horizon, 6, 1))
         else:
             args.others_input_type = "none"
         if self.n_obstacles > 0:
@@ -40,6 +48,7 @@ class trajectory_predictor():
 
         self.model = model_selector(args)
         self.model.call(self.input_data)
+        self.model.built = True
         self.model.load_weights(checkpoint_path)
         
         if self.model.stateful:
@@ -49,6 +58,7 @@ class trajectory_predictor():
     def predict(self, robot_data, obstacle_data):
         
         for query_quad_idx in range(self.n_robots):
+        # for query_quad_idx in range(1):
             other_quad_idxs = [idx for idx in range(self.n_robots) if idx != query_quad_idx]
             
             self.input_data["query_input"][query_quad_idx] = np.transpose( robot_data[3:6, : , query_quad_idx] )
@@ -56,13 +66,15 @@ class trajectory_predictor():
             if self.n_robots > 1:
                 self.input_data["others_input"][query_quad_idx] = np.moveaxis( robot_data[0:6, : , other_quad_idxs] - robot_data[0:6, :, query_quad_idx:query_quad_idx+1], 0, 1)
             
-            if self.n_obstacles > 0:
-                self.input_data["obstacles_input"][query_quad_idx] = obstacle_data - robot_data[0:6, -1, query_quad_idx:query_quad_idx+1]
+            # if self.n_obstacles > 0:
+            #     self.input_data["obstacles_input"][query_quad_idx] = obstacle_data - robot_data[0:6, -1, query_quad_idx:query_quad_idx+1]
         
-        scaled_data = self.scaler.transform(self.input_data)
+        # scaled_data = self.scaler.transform(self.input_data)
+        scaled_data = self.input_data
         
         scaled_data["target"] = self.model.predict(scaled_data)
-        vel_prediction = self.scaler.inverse_transform(scaled_data)["target"]
+        # vel_prediction = self.scaler.inverse_transform(scaled_data)["target"]
+        vel_prediction = scaled_data["target"]
         
         pos_prediction = np.zeros((self.n_robots, self.prediction_horizon+1, 3))
         pos_prediction[:, 0, :] = np.transpose(robot_data[0:3, -1 , :])
@@ -72,8 +84,55 @@ class trajectory_predictor():
         return np.swapaxes(pos_prediction[:, 1:, :], 0, -1)
         
         
+root_dir = os.path.dirname(sys.path[0])
+data_master_dir = os.path.join(root_dir, "data", "")
+raw_data_dir = os.path.join(data_master_dir, "Raw", "")  
+dataset_name = "hr_val_300"      
+raw_dataset_path = os.path.join(raw_data_dir, dataset_name + '.mat')
+
+   
+past_horizon = 10
+pred_horizon = 10
         
+data = loadmat(raw_dataset_path)
+robot_data = data['log_quad_state_real']
+
+
+human_positions = robot_data[ 0:2, : , 0]
+robot_positions = robot_data[ 0:2, : , 1]
+
+past_human_positions = human_positions[:, 0:past_horizon]
+past_robot_positions = robot_positions[:, 0:past_horizon]
+ground_truth_human_prediction = human_positions[:, past_horizon:pred_horizon]
+
+past_robot_data = robot_data[ :, 0:past_horizon , :]
+# print(robot_data)
+
+prediction_network = trajectory_predictor(2, 0, past_horizon, pred_horizon, 2)
+res = prediction_network.predict(past_robot_data, 0)
+
+predicted_human_positions = res[0:2, : , 0]
         
+plt.plot(past_human_positions[0], past_human_positions[1], marker='o', linestyle='-', color='blue', label='Past Human Positions')
+
+# Plot past robot positions
+plt.plot(ground_truth_human_prediction[0], ground_truth_human_prediction[1], marker='o', linestyle='-', color='green', label='Ground Truth Human Position')
+
+# Plot predicted human positions
+plt.plot(predicted_human_positions[0], predicted_human_positions[1], marker='o', linestyle='-', color='red', label='Predicted Human Positions')
+
+# Set plot labels and title
+plt.xlabel('X-axis')
+plt.ylabel('Y-axis')
+plt.title('Past Human, Past Robot, and Predicted Human Positions')
+plt.legend()
+
+# Save the plot with the current date-time as the file name
+current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+plt.savefig(f'positions_plot_{current_datetime}.png')
+
+# Show the plot
+plt.show()
 
 
 
