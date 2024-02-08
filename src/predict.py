@@ -108,7 +108,7 @@ ground_truth_human_prediction = human_positions[:, past_horizon:pred_horizon]
 past_robot_data = robot_data[ :, 0:past_horizon , :]
 # print(robot_data)
 
-prediction_network = trajectory_predictor(2, 0, past_horizon, pred_horizon, 2)
+prediction_network = trajectory_predictor(2, 0, past_horizon, pred_horizon, 0.2)
 res = prediction_network.predict(past_robot_data, 0)
 
 predicted_human_positions = res[0:2, : , 0]
