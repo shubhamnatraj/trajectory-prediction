@@ -13,7 +13,7 @@ model_name = "dynamicEllipsoidObstaclesRNN_commonInputMaxPooling_alt"
 model_number = 511
 
 class trajectory_predictor():
-    def __init__(self, n_robots, n_obstacles, past_horizon=10, prediction_horizon=20, dt=0.05, model_name = model_name, model_number = model_number):
+    def __init__(self, n_robots, n_obstacles, beta, past_horizon=10, prediction_horizon=20, dt=0.05, model_name = model_name, model_number = model_number):
         self.n_robots = n_robots
         self.n_obstacles = n_obstacles
         self.past_horizon = past_horizon
@@ -33,8 +33,12 @@ class trajectory_predictor():
         self.scaler = args.scaler
         
         self.input_data = {}
+        if beta == 0:
+            self.input_data["beta"] = np.zeros((self.n_robots, self.past_horizon, 1))
+        else:
+            self.input_data["beta"] = np.ones((self.n_robots, self.past_horizon, 1))
         # self.input_data["beta"] = np.zeros((1, self.past_horizon, 1))
-        self.input_data["beta"] = np.ones((self.n_robots, self.past_horizon, 1))
+        # self.input_data["beta"] = np.ones((self.n_robots, self.past_horizon, 1))
         # self.input_data["query_input"] = np.zeros((1, self.past_horizon, 3))
         self.input_data["query_input"] = np.zeros((self.n_robots, self.past_horizon, 3))
         if self.n_robots > 1:
@@ -87,7 +91,8 @@ class trajectory_predictor():
 root_dir = os.path.dirname(sys.path[0])
 data_master_dir = os.path.join(root_dir, "data", "")
 raw_data_dir = os.path.join(data_master_dir, "Raw", "")  
-dataset_name = "hr_val_300"      
+dataset_name = "hr_pred_10_B0_3"      
+beta = 1
 raw_dataset_path = os.path.join(raw_data_dir, dataset_name + '.mat')
 
    
@@ -98,38 +103,46 @@ data = loadmat(raw_dataset_path)
 robot_data = data['log_quad_state_real']
 
 
+
 human_positions = robot_data[ 0:2, : , 0]
 robot_positions = robot_data[ 0:2, : , 1]
 
 past_human_positions = human_positions[:, 0:past_horizon]
 past_robot_positions = robot_positions[:, 0:past_horizon]
-ground_truth_human_prediction = human_positions[:, past_horizon:pred_horizon]
+ground_truth_human_future = human_positions[:, past_horizon:past_horizon+pred_horizon]
 
 past_robot_data = robot_data[ :, 0:past_horizon , :]
 # print(robot_data)
 
-prediction_network = trajectory_predictor(2, 0, past_horizon, pred_horizon, 0.2)
-res = prediction_network.predict(past_robot_data, 0)
+prediction_network_b0 = trajectory_predictor(2, 0, 0, past_horizon, pred_horizon, 0.2)
+prediction_network_b1 = trajectory_predictor(2, 0, 1, past_horizon, pred_horizon, 0.2)
+res_b0 = prediction_network_b0.predict(past_robot_data, 0)
+res_b1 = prediction_network_b1.predict(past_robot_data, 0)
 
-predicted_human_positions = res[0:2, : , 0]
+predicted_human_positions_b0 = res_b0[0:2, : , 0]
+predicted_human_positions_b1 = res_b1[0:2, : , 0]
         
-plt.plot(past_human_positions[0], past_human_positions[1], marker='o', linestyle='-', color='blue', label='Past Human Positions')
+# plt.plot(past_robot_positions[0], past_robot_positions[1], marker='o', linestyle='-', color='black', label='Past Robot Positions')
+plt.plot(past_human_positions[0], past_human_positions[1], marker='o', linestyle='-', color='magenta', label='Past Human Positions')
 
-# Plot past robot positions
-plt.plot(ground_truth_human_prediction[0], ground_truth_human_prediction[1], marker='o', linestyle='-', color='green', label='Ground Truth Human Position')
 
-# Plot predicted human positions
-plt.plot(predicted_human_positions[0], predicted_human_positions[1], marker='o', linestyle='-', color='red', label='Predicted Human Positions')
+plt.plot(ground_truth_human_future[0], ground_truth_human_future[1], marker='o', linestyle='-', color='red', label='Ground Truth Human Future Position')
+
+
+plt.plot(predicted_human_positions_b0[0], predicted_human_positions_b0[1], marker='o', linestyle='-', color='blue', label='Predicted Human Positions B = 0')
+plt.plot(predicted_human_positions_b1[0], predicted_human_positions_b1[1], marker='o', linestyle='-', color='green', label='Predicted Human Positions B = 1')
 
 # Set plot labels and title
 plt.xlabel('X-axis')
 plt.ylabel('Y-axis')
-plt.title('Past Human, Past Robot, and Predicted Human Positions')
+plt.title(dataset_name)
 plt.legend()
+# plt.xlim(0, 10)
+# plt.ylim(0, 10)
 
 # Save the plot with the current date-time as the file name
 current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-plt.savefig(f'positions_plot_{current_datetime}.png')
+plt.savefig(f'{dataset_name}_{current_datetime}.png')
 
 # Show the plot
 plt.show()
