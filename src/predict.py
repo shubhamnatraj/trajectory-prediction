@@ -122,7 +122,7 @@ res_b1 = prediction_network_b1.predict(past_robot_data, 0)
 predicted_human_positions_b0 = res_b0[0:2, : , 0]
 predicted_human_positions_b1 = res_b1[0:2, : , 0]
         
-# plt.plot(past_robot_positions[0], past_robot_positions[1], marker='o', linestyle='-', color='black', label='Past Robot Positions')
+plt.plot(past_robot_positions[0], past_robot_positions[1], marker='o', linestyle='-', color='black', label='Past Robot Positions')
 plt.plot(past_human_positions[0], past_human_positions[1], marker='o', linestyle='-', color='magenta', label='Past Human Positions')
 
 
