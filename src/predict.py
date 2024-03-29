@@ -91,7 +91,7 @@ class trajectory_predictor():
 root_dir = os.path.dirname(sys.path[0])
 data_master_dir = os.path.join(root_dir, "data", "")
 raw_data_dir = os.path.join(data_master_dir, "Raw", "")  
-dataset_name = "hr_pred_10_B0_3"      
+dataset_name = "hr_pred_10_B1_1"      
 beta = 1
 raw_dataset_path = os.path.join(raw_data_dir, dataset_name + '.mat')
 
@@ -122,15 +122,40 @@ res_b1 = prediction_network_b1.predict(past_robot_data, 0)
 predicted_human_positions_b0 = res_b0[0:2, : , 0]
 predicted_human_positions_b1 = res_b1[0:2, : , 0]
         
+# plt.plot(past_robot_positions[0], past_robot_positions[1], marker='o', linestyle='-', color='black', label='Past Robot Positions')
+# plt.plot(past_human_positions[0], past_human_positions[1], marker='o', linestyle='-', color='magenta', label='Past Human Positions')
+
+
+# plt.plot(ground_truth_human_future[0], ground_truth_human_future[1], marker='o', linestyle='-', color='red', label='Ground Truth Human Future Position')
+
+
+# plt.plot(predicted_human_positions_b0[0], predicted_human_positions_b0[1], marker='o', linestyle='-', color='blue', label='Predicted Human Positions B = 0')
+# plt.plot(predicted_human_positions_b1[0], predicted_human_positions_b1[1], marker='o', linestyle='-', color='green', label='Predicted Human Positions B = 1')
+
+# Plot past robot positions
 plt.plot(past_robot_positions[0], past_robot_positions[1], marker='o', linestyle='-', color='black', label='Past Robot Positions')
+for i, (x, y) in enumerate(zip(past_robot_positions[0], past_robot_positions[1])):
+    plt.text(x, y, str(i), color='black')
+
+# Plot past human positions
 plt.plot(past_human_positions[0], past_human_positions[1], marker='o', linestyle='-', color='magenta', label='Past Human Positions')
+for i, (x, y) in enumerate(zip(past_human_positions[0], past_human_positions[1])):
+    plt.text(x, y, str(i), color='magenta')
 
-
+# Plot ground truth human future position
 plt.plot(ground_truth_human_future[0], ground_truth_human_future[1], marker='o', linestyle='-', color='red', label='Ground Truth Human Future Position')
+for i, (x, y) in enumerate(zip(ground_truth_human_future[0], ground_truth_human_future[1])):
+    plt.text(x, y, str(i), color='red')
 
-
+# Plot predicted human positions for B = 0
 plt.plot(predicted_human_positions_b0[0], predicted_human_positions_b0[1], marker='o', linestyle='-', color='blue', label='Predicted Human Positions B = 0')
+for i, (x, y) in enumerate(zip(predicted_human_positions_b0[0], predicted_human_positions_b0[1])):
+    plt.text(x, y, str(i), color='blue')
+
+# Plot predicted human positions for B = 1
 plt.plot(predicted_human_positions_b1[0], predicted_human_positions_b1[1], marker='o', linestyle='-', color='green', label='Predicted Human Positions B = 1')
+for i, (x, y) in enumerate(zip(predicted_human_positions_b1[0], predicted_human_positions_b1[1])):
+    plt.text(x, y, str(i), color='green')
 
 # Set plot labels and title
 plt.xlabel('X-axis')
