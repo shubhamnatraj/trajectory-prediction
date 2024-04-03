@@ -129,8 +129,8 @@ PLOT_ELLIPSOIDS = False
 # datasets_validation = "sameRadDynObs10quad10_v2_2 sameRadStatObs10quad10_2"
 # datasets_testing = datasets_validation
 
-datasets_training = "hr_train_3000_mixed"
-datasets_validation = "hr_val_500_mixed"
+datasets_training = "human_B0_7500"
+datasets_validation = "human_B0_900"
 datasets_testing = datasets_validation
 
 # datasets_training = "goalSequence1"
@@ -149,7 +149,7 @@ regularization_factor = 0.01
 #### Network architecture ####
 # Recommended: vel, relpos_relvel, dynamic_relvel
 query_input_type = "vel" # {vel}
-others_input_type = "relpos_relvel" # {none, relpos_vel, relpos_relvel}
+others_input_type = "none" # {none, relpos_vel, relpos_relvel}
 obstacles_input_type = "none" # {none, static, dynamic, dynamic_radii, dynamic_points6concat, dynamic_points6stack} (dynamic options can also use _relvel)
 target_type = "vel" # {vel}
 

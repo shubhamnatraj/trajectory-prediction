@@ -91,7 +91,7 @@ class trajectory_predictor():
 root_dir = os.path.dirname(sys.path[0])
 data_master_dir = os.path.join(root_dir, "data", "")
 raw_data_dir = os.path.join(data_master_dir, "Raw", "")  
-dataset_name = "hr_pred_10_B1_1"      
+dataset_name = "hr_pred_10_B0_3"      
 beta = 1
 raw_dataset_path = os.path.join(raw_data_dir, dataset_name + '.mat')
 
@@ -105,10 +105,10 @@ robot_data = data['log_quad_state_real']
 
 
 human_positions = robot_data[ 0:2, : , 0]
-robot_positions = robot_data[ 0:2, : , 1]
+# robot_positions = robot_data[ 0:2, : , 1]
 
 past_human_positions = human_positions[:, 0:past_horizon]
-past_robot_positions = robot_positions[:, 0:past_horizon]
+# past_robot_positions = robot_positions[:, 0:past_horizon]
 ground_truth_human_future = human_positions[:, past_horizon:past_horizon+pred_horizon]
 
 past_robot_data = robot_data[ :, 0:past_horizon , :]
@@ -133,9 +133,9 @@ predicted_human_positions_b1 = res_b1[0:2, : , 0]
 # plt.plot(predicted_human_positions_b1[0], predicted_human_positions_b1[1], marker='o', linestyle='-', color='green', label='Predicted Human Positions B = 1')
 
 # Plot past robot positions
-plt.plot(past_robot_positions[0], past_robot_positions[1], marker='o', linestyle='-', color='black', label='Past Robot Positions')
-for i, (x, y) in enumerate(zip(past_robot_positions[0], past_robot_positions[1])):
-    plt.text(x, y, str(i), color='black')
+# plt.plot(past_robot_positions[0], past_robot_positions[1], marker='o', linestyle='-', color='black', label='Past Robot Positions')
+# for i, (x, y) in enumerate(zip(past_robot_positions[0], past_robot_positions[1])):
+#     plt.text(x, y, str(i), color='black')
 
 # Plot past human positions
 plt.plot(past_human_positions[0], past_human_positions[1], marker='o', linestyle='-', color='magenta', label='Past Human Positions')
